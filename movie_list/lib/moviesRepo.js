@@ -1,56 +1,65 @@
-import { CATEGORIES } from "./validate";
+import { createClient } from "@supabase/supabase-js";
+import { STATUSES } from "./validate";
 
-const store = (globalThis.__movies ??= new Map()); // id -> movie
+const supabase = createClient(
+  process.env.SUPABASE_URL,
+  process.env.SUPABASE_ANON_KEY,
+  { auth: { persistSession: false, autoRefreshToken: false } }
+);
 
-export async function list(userId, category) {
-  return [...store.values()].filter(
-    (m) => m.userId === userId && (!category || m.category === category)
-  );
+const TABLE = "movie_list";
+const COLUMNS = "id, movie_name, movie_status";
+
+// an invalid id in the URL (e.g. /api/movies/abc) counts as "not found"
+function handle(error) {
+  if (!error) return;
+  if (error.code === "22P02") return;
+  throw error;
 }
 
-export async function create(userId, { title, year, category }) {
-  const movie = {
-    id: crypto.randomUUID(),
-    userId,
-    title,
-    year,
-    category,
-    rating: null,
-    notes: null, // new
-    createdAt: new Date().toISOString(),
-  };
-  store.set(movie.id, movie);
-  return movie;
+export async function list(status) {
+  let query = supabase.from(TABLE).select(COLUMNS).order("id", { ascending: false });
+  if (status) query = query.eq("movie_status", status);
+  const { data, error } = await query;
+  handle(error);
+  return data ?? [];
 }
 
-export async function get(userId, id) {
-  const movie = store.get(id);
-  return movie && movie.userId === userId ? movie : null; // ownership check
+export async function create({ movie_name, movie_status }) {
+  const { data, error } = await supabase
+    .from(TABLE)
+    .insert({ movie_name, movie_status })
+    .select(COLUMNS)
+    .single();
+  handle(error);
+  return data;
 }
 
-export async function update(userId, id, patch) {
-  const movie = store.get(id);
-  if (!movie || movie.userId !== userId) return null; // ownership check
-  Object.assign(movie, patch);
-  return movie;
+export async function update(id, patch) {
+  const { data, error } = await supabase
+    .from(TABLE)
+    .update(patch)
+    .eq("id", id)
+    .select(COLUMNS)
+    .maybeSingle();
+  handle(error);
+  return data;
 }
 
-export async function remove(userId, id) {
-  const movie = store.get(id);
-  if (!movie || movie.userId !== userId) return false; // ownership check
-  store.delete(id);
-  return true;
+export async function remove(id) {
+  const { data, error } = await supabase
+    .from(TABLE)
+    .delete()
+    .eq("id", id)
+    .select(COLUMNS)
+    .maybeSingle();
+  handle(error);
+  return !!data;
 }
 
-export async function stats(userId) {
-  const mine = await list(userId);
-  const counts = Object.fromEntries(CATEGORIES.map((c) => [c, 0]));
-  mine.forEach((m) => counts[m.category]++);
-
-  const rated = mine.filter((m) => m.rating !== null);
-  const averageRating = rated.length
-    ? Math.round((rated.reduce((s, m) => s + m.rating, 0) / rated.length) * 10) / 10
-    : null;
-
-  return { counts, averageRating, ratedCount: rated.length };
+export async function stats() {
+  const all = await list();
+  const counts = Object.fromEntries(STATUSES.map((s) => [s, 0]));
+  all.forEach((m) => counts[m.movie_status]++);
+  return { counts, total: all.length };
 }
