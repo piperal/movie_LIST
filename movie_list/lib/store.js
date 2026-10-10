@@ -1,111 +1,83 @@
-// Repository layer. The route handlers only use list / get / create / update / remove.
-// To move to Postgres, Mongo, SQLite, Prisma or Drizzle, re-implement `repo` with the same
-// async methods (return null / false when an id is not found) and nothing else changes.
-//
-// This default stores everything in ./data/movies.json (override with DATA_FILE).
-// It works for local development and a single long-running Node server. It does NOT persist
-// on Vercel or other serverless hosts, whose filesystems are read-only or temporary.
-import { promises as fs } from "node:fs";
-import path from "node:path";
-import { randomUUID } from "node:crypto";
+import { getSupabase } from "@/lib/supabase";
 
-const file = () => path.resolve(process.env.DATA_FILE || path.join(process.cwd(), "data", "movies.json"));
+const STATUS_TO_DATABASE = {
+  want: "Want",
+  watching: "Watching",
+  watched: "Watched",
+};
 
-async function readAll() {
-  try {
-    const list = JSON.parse(await fs.readFile(file(), "utf8"));
-    return Array.isArray(list) ? list : [];
-  } catch (e) {
-    if (e.code === "ENOENT") {
-      const list = [
-        {
-          title: "The Grand Budapest Hotel",
-          year: 2014,
-          status: "watched",
-          rating: 5,
-          notes: "A perfectly rewatchable little adventure.",
-          id: randomUUID(),
-          createdAt: "2026-09-18T18:00:00.000Z",
-        },
-        {
-          title: "Dune: Part Two",
-          year: 2024,
-          status: "watching",
-          rating: 4,
-          notes: "Big-screen sci-fi at its best.",
-          id: randomUUID(),
-          createdAt: "2026-09-20T18:00:00.000Z",
-        },
-        {
-          title: "Arrival",
-          year: 2016,
-          status: "want",
-          rating: 0,
-          notes: "",
-          id: randomUUID(),
-          createdAt: "2026-09-22T18:00:00.000Z",
-        },
-        {
-          title: "Spider-Man: Into the Spider-Verse",
-          year: 2018,
-          status: "watched",
-          rating: 5,
-          notes: "The animation still feels completely fresh.",
-          id: randomUUID(),
-          createdAt: "2026-09-24T18:00:00.000Z",
-        },
-      ];
-      await writeAll(list);
-      return list;
-    }
-    throw e;
+function fromDatabase(row) {
+  const status = String(row.movie_status).trim().toLowerCase();
+  const normalizedStatus = status === "want to watch" ? "want" : status;
+  if (!Object.hasOwn(STATUS_TO_DATABASE, normalizedStatus)) {
+    throw new Error(`Unexpected movie status in Supabase: ${row.movie_status}`);
   }
+
+  return {
+    id: String(row.id),
+    title: row.movie_name,
+    year: row.release_year,
+    status: normalizedStatus,
+    rating: row.rating,
+    notes: row.notes,
+    createdAt: row.created_at,
+  };
 }
 
-async function writeAll(list) {
-  const f = file();
-  await fs.mkdir(path.dirname(f), { recursive: true });
-  const tmp = f + ".tmp";
-  await fs.writeFile(tmp, JSON.stringify(list, null, 2));
-  await fs.rename(tmp, f); // atomic replace
+function toDatabase(movie) {
+  const row = {};
+  if ("title" in movie) row.movie_name = movie.title;
+  if ("year" in movie) row.release_year = movie.year;
+  if ("status" in movie) row.movie_status = STATUS_TO_DATABASE[movie.status];
+  if ("rating" in movie) row.rating = movie.rating;
+  if ("notes" in movie) row.notes = movie.notes;
+  return row;
 }
 
-// Serialise read-modify-write cycles. Kept on globalThis so dev hot reloads share one queue.
-globalThis.__reelLogQueue ??= Promise.resolve();
-function exclusive(fn) {
-  const run = globalThis.__reelLogQueue.then(fn);
-  globalThis.__reelLogQueue = run.catch(() => {});
-  return run;
+async function throwOnError(query) {
+  const { data, error } = await query;
+  if (error) throw error;
+  return data;
 }
 
 export const repo = {
-  list: () => exclusive(readAll),
+  async list() {
+    const data = await throwOnError(
+      getSupabase().from("movie_list").select("*").order("created_at", { ascending: false }),
+    );
+    return data.map(fromDatabase);
+  },
 
-  get: (id) => exclusive(async () => (await readAll()).find((m) => m.id === id) || null),
+  async get(id) {
+    const data = await throwOnError(
+      getSupabase().from("movie_list").select("*").eq("id", id).maybeSingle(),
+    );
+    return data ? fromDatabase(data) : null;
+  },
 
-  create: (data) => exclusive(async () => {
-    const list = await readAll();
-    const movie = { title: "", year: null, status: "want", rating: 0, notes: "", ...data,
-                    id: randomUUID(), createdAt: new Date().toISOString() };
-    list.push(movie);
-    await writeAll(list);
-    return movie;
-  }),
+  async create(movie) {
+    const data = await throwOnError(
+      getSupabase().from("movie_list").insert(toDatabase(movie)).select("*").single(),
+    );
+    return fromDatabase(data);
+  },
 
-  update: (id, patch) => exclusive(async () => {
-    const list = await readAll();
-    const movie = list.find((m) => m.id === id);
-    if (!movie) return null;
-    Object.assign(movie, patch);
-    await writeAll(list);
-    return movie;
-  }),
+  async update(id, patch) {
+    const data = await throwOnError(
+      getSupabase()
+        .from("movie_list")
+        .update(toDatabase(patch))
+        .eq("id", id)
+        .select("*")
+        .maybeSingle(),
+    );
+    return data ? fromDatabase(data) : null;
+  },
 
-  remove: (id) => exclusive(async () => {
-    const list = await readAll();
-    const next = list.filter((m) => m.id !== id);
-    if (next.length === list.length) return false;
-    await writeAll(next);
-    return true;
-  }),
+  async remove(id) {
+    const data = await throwOnError(
+      getSupabase().from("movie_list").delete().eq("id", id).select("id").maybeSingle(),
+    );
+    return Boolean(data);
+  },
 };

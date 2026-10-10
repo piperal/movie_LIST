@@ -1,20 +1,24 @@
 # Reel Log
 
-A movie watchlist you can run locally without an account, API key, or external database.
+A movie watchlist powered by Supabase.
 Add films, track what you are watching, rate and annotate movies, search and filter your
 list, and export it as JSON.
 
 ## Run it
 
-Requires Node.js 20.9 or newer.
+Requires Node.js 20.9 or newer and a Supabase project with a `public.movie_list` table.
+
+1. In the Supabase SQL Editor, run [`supabase/migrations/20261010130000_add_movie_tracker_fields.sql`](./supabase/migrations/20261010130000_add_movie_tracker_fields.sql) and [`supabase/migrations/20261010131000_allow_anonymous_movie_list_access.sql`](./supabase/migrations/20261010131000_allow_anonymous_movie_list_access.sql). The existing table should have `id`, `movie_name`, `release_year`, and `movie_status` columns.
+2. Create `movie_list/.env.local` from [`.env.example`](./.env.example) and set `SUPABASE_URL` and `SUPABASE_ANON_KEY` from your Supabase project.
+3. Install dependencies and start the app:
 
 ```bash
+cd movie_list
 npm install
-npm run dev
+npm run dev -- --webpack
 ```
 
-Open [http://localhost:3000](http://localhost:3000). The first visit creates a small
-editable sample watchlist so the app is ready to demo immediately.
+Open [http://localhost:3000](http://localhost:3000).
 
 ## Demo ideas
 
@@ -25,10 +29,7 @@ editable sample watchlist so the app is ready to demo immediately.
 
 ## Data and production
 
-The API is served by the Next.js app. Movie data is stored in `data/movies.json` and
-survives restarts on a local machine. The first launch seeds sample entries only when
-that file does not exist; after that, the list is yours to edit. Remove the file to
-restore the demo list. Set `DATA_FILE` to choose a different data file.
-
-This file-based store is for local demos and a single long-running server; it is not
-suitable for serverless hosting. Use a persistent database before deploying there.
+The Next.js API reads and writes the Supabase `public.movie_list` table. The anonymous
+access policy is intended only for a private/local demo: anyone who can reach the app or
+its API can read, add, edit, and delete entries in the shared list. Do not deploy it
+publicly with this policy. Keep `.env.local` private and never expose a service-role key.
