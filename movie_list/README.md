@@ -1,36 +1,34 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Reel Log
 
-## Getting Started
+A movie watchlist you can run locally without an account, API key, or external database.
+Add films, track what you are watching, rate and annotate movies, search and filter your
+list, and export it as JSON.
 
-First, run the development server:
+## Run it
+
+Requires Node.js 20.9 or newer.
 
 ```bash
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open [http://localhost:3000](http://localhost:3000). The first visit creates a small
+editable sample watchlist so the app is ready to demo immediately.
 
-You can start editing the page by modifying `app/page.js`. The page auto-updates as you edit the file.
+## Demo ideas
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+- Add a movie and set its status.
+- Filter to **Watching** or **Watched**, then search or change the sort order.
+- Change a movie's status, rate it with the stars, or add notes.
+- Export the list with **Export JSON**.
 
-## Learn More
+## Data and production
 
-To learn more about Next.js, take a look at the following resources:
+The API is served by the Next.js app. Movie data is stored in `data/movies.json` and
+survives restarts on a local machine. The first launch seeds sample entries only when
+that file does not exist; after that, the list is yours to edit. Remove the file to
+restore the demo list. Set `DATA_FILE` to choose a different data file.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+This file-based store is for local demos and a single long-running server; it is not
+suitable for serverless hosting. Use a persistent database before deploying there.
